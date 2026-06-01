@@ -1,6 +1,11 @@
 services:
   video-worker:
     runtime: runc
+    build:
+      args:
+        PYTORCH_IMAGE: ${PYTORCH_IMAGE:-python:3.12-slim}
+        TORCH_INSTALL_INDEX_URL: ${TORCH_INSTALL_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+        TORCH_INSTALL_PACKAGE: ${TORCH_INSTALL_PACKAGE:-torch==2.4.1+cpu}
     environment:
       NVIDIA_VISIBLE_DEVICES: ""
       NVIDIA_DRIVER_CAPABILITIES: ""

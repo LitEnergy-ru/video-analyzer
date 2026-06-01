@@ -175,6 +175,8 @@ CPU VPS without NVIDIA runtime:
 docker compose -f docker-compose.worker.yml -f docker-compose.worker.cpu.yml up -d --build
 ```
 
+The CPU override uses `python:3.12-slim` and installs `torch==2.4.1+cpu` from the official PyTorch CPU wheel index. Do not use `pytorch/pytorch:*cpu` tags; the official PyTorch Docker repository does not publish the `2.4.1-cpu` tag.
+
 Stop:
 
 ```powershell

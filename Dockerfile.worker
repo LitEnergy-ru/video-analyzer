@@ -1,5 +1,7 @@
 ARG PYTORCH_IMAGE=pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
 FROM ${PYTORCH_IMAGE}
+ARG TORCH_INSTALL_INDEX_URL=
+ARG TORCH_INSTALL_PACKAGE=
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -20,6 +22,13 @@ RUN apt-get update && \
 
 COPY requirements-worker.txt /app/requirements-worker.txt
 RUN python -m pip install --upgrade pip && \
+    if [ -n "$TORCH_INSTALL_PACKAGE" ]; then \
+      if [ -n "$TORCH_INSTALL_INDEX_URL" ]; then \
+        pip install --index-url "$TORCH_INSTALL_INDEX_URL" "$TORCH_INSTALL_PACKAGE"; \
+      else \
+        pip install "$TORCH_INSTALL_PACKAGE"; \
+      fi; \
+    fi && \
     pip install -r /app/requirements-worker.txt
 
 COPY worker.py /app/worker.py

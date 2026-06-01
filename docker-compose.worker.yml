@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile.worker
       args:
         PYTORCH_IMAGE: ${PYTORCH_IMAGE:-pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime}
+        TORCH_INSTALL_INDEX_URL: ${TORCH_INSTALL_INDEX_URL:-}
+        TORCH_INSTALL_PACKAGE: ${TORCH_INSTALL_PACKAGE:-}
     container_name: video-worker
     restart: unless-stopped
     runtime: nvidia
