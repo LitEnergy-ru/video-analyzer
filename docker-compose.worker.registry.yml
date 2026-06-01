@@ -1,0 +1,26 @@
+services:
+  video-worker:
+    image: ${VIDEO_WORKER_IMAGE}
+    container_name: video-worker
+    restart: unless-stopped
+    runtime: runc
+    shm_size: "2gb"
+    env_file:
+      - path: .env.worker.local
+        required: false
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ""
+      NVIDIA_DRIVER_CAPABILITIES: ""
+    command: ["python", "worker.py"]
+    volumes:
+      - video_worker_tmp:/tmp/video-jobs
+      - video_worker_hf_cache:/models/huggingface
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os; assert os.path.exists('/app/worker.py')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  video_worker_tmp:
+  video_worker_hf_cache:

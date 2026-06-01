@@ -177,6 +177,12 @@ docker compose -f docker-compose.worker.yml -f docker-compose.worker.cpu.yml up 
 
 The CPU override uses `python:3.12-slim` and installs `torch==2.4.1+cpu` from the official PyTorch CPU wheel index. Do not use `pytorch/pytorch:*cpu` tags; the official PyTorch Docker repository does not publish the `2.4.1-cpu` tag.
 
+If the VPS cannot build images because Docker Hub, Debian mirrors, or PyTorch wheels are unavailable, build and push the image from a machine with normal network access, then run the registry-only compose file:
+
+```powershell
+VIDEO_WORKER_IMAGE=registry.example.com/litenergy/video-worker:20260601-1 docker compose -f docker-compose.worker.registry.yml up -d
+```
+
 Stop:
 
 ```powershell
