@@ -32,8 +32,11 @@ RUN python -m pip install --upgrade pip && \
       else \
         pip install "$TORCH_INSTALL_PACKAGE"; \
       fi; \
-    fi && \
-    pip install -r /app/requirements-worker.txt
+      grep -Ev '^[[:space:]]*torch([<>=!~[:space:]]|$)' /app/requirements-worker.txt > /tmp/requirements-worker.no-torch.txt; \
+      pip install -r /tmp/requirements-worker.no-torch.txt; \
+    else \
+      pip install -r /app/requirements-worker.txt; \
+    fi
 
 COPY worker.py /app/worker.py
 COPY fast_cpu_analyzer.py /app/fast_cpu_analyzer.py
