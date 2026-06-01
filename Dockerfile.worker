@@ -1,5 +1,6 @@
 ARG PYTORCH_IMAGE=pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
 FROM ${PYTORCH_IMAGE}
+ARG APT_MIRROR=
 ARG TORCH_INSTALL_INDEX_URL=
 ARG TORCH_INSTALL_PACKAGE=
 
@@ -11,7 +12,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN apt-get update && \
+RUN if [ -n "$APT_MIRROR" ]; then \
+      sed -i "s|http://deb.debian.org/debian|$APT_MIRROR|g; s|http://deb.debian.org/debian-security|$APT_MIRROR-security|g" /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+    fi && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
       ca-certificates \
       ffmpeg \
