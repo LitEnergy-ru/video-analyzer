@@ -1,0 +1,30 @@
+services:
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        PYTORCH_IMAGE: ${PYTORCH_IMAGE:-pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime}
+    container_name: video-worker
+    restart: unless-stopped
+    runtime: nvidia
+    shm_size: "2gb"
+    env_file:
+      - path: .env.worker.local
+        required: false
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    command: ["python", "worker.py"]
+    volumes:
+      - video_worker_tmp:/tmp/video-jobs
+      - video_worker_hf_cache:/models/huggingface
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os; assert os.path.exists('/app/worker.py')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  video_worker_tmp:
+  video_worker_hf_cache:

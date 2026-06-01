@@ -1,0 +1,6 @@
+services:
+  video-worker:
+    runtime: runc
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ""
+      NVIDIA_DRIVER_CAPABILITIES: ""

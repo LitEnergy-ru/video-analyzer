@@ -1,0 +1,9 @@
+psycopg[binary]>=3.2
+requests[socks]>=2.32
+yt-dlp[default]>=2025.1.15
+PySocks>=1.7
+numpy>=1.26
+opencv-python-headless>=4.10
+Pillow>=10.4
+torch>=2.4
+transformers>=4.57

@@ -1,0 +1,8 @@
+-- Obsolete.
+-- Worker orchestration fields are stored in user_tasks.progress_json:
+--   analysisStatus
+--   workerId
+--   pickedAt
+--   attemptCount
+--   analyzedAt
+--   result

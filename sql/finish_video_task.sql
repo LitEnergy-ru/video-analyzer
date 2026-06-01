@@ -1,0 +1,25 @@
+-- Video worker no longer finishes jobs with direct SQL.
+-- It sends result to backend:
+--
+-- PATCH {BACKEND_API_BASE_URL}/me/tasks/{task_id}
+-- Authorization: Bearer {BACKEND_SERVICE_TOKEN}
+-- X-User-Id: {user_id}
+--
+-- approved:
+-- {
+--   "status": "approved",
+--   "progress": 1,
+--   "progressJson": {"analysisStatus": "approved", ...}
+-- }
+--
+-- rejected:
+-- {
+--   "status": "rejected",
+--   "progress": 0,
+--   "progressJson": {"analysisStatus": "rejected", ...}
+-- }
+--
+-- manual review:
+-- {
+--   "progressJson": {"analysisStatus": "manual_review", ...}
+-- }

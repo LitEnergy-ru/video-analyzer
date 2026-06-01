@@ -1,0 +1,7 @@
+-- Obsolete.
+-- Video jobs now live in backend-owned user_tasks rows:
+--   user_tasks.status = 'submitted'
+--   tasks.type = 'content'
+--   user_tasks.external_ref = submitted video URL
+--
+-- Do not create the legacy video table.
