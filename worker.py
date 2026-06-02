@@ -74,6 +74,7 @@ DOWNLOADER_AUTO = "auto"
 DOWNLOADER_HTTP = "http"
 DOWNLOADER_YTDLP = "yt-dlp"
 ANALYZER_NONE = "none"
+ANALYZER_CV_MATCH = "cv_match"
 ANALYZER_FAST_CPU = "fast_cpu"
 ANALYZER_SAM3 = "sam3"
 ANALYZER_SUBPROCESS = "subprocess"
@@ -103,7 +104,7 @@ def _default_analyzer_engine() -> str:
         return value
     if os.getenv("VIDEO_ANALYZER_CMD", "").strip():
         return ANALYZER_SUBPROCESS
-    return ANALYZER_FAST_CPU
+    return ANALYZER_CV_MATCH
 
 
 def _pick_extension_from_url(url: str) -> str:
@@ -179,11 +180,12 @@ def parse_args() -> Config:
     parser.add_argument("--worker-id", default=os.getenv("VIDEO_WORKER_ID", _default_worker_id()))
     parser.add_argument(
         "--analyzer-engine",
-        choices=[ANALYZER_NONE, ANALYZER_FAST_CPU, ANALYZER_SAM3, ANALYZER_SUBPROCESS],
+        choices=[ANALYZER_NONE, ANALYZER_CV_MATCH, ANALYZER_FAST_CPU, ANALYZER_SAM3, ANALYZER_SUBPROCESS],
         default=_default_analyzer_engine(),
         help=(
-            "fast_cpu uses lightweight CLIP sampling; sam3 keeps the segmentation model warm in-process; "
-            "subprocess runs VIDEO_ANALYZER_CMD; none sends manual review."
+            "cv_match uses OpenCV reference matching without ML dependencies; fast_cpu uses CLIP sampling; "
+            "sam3 keeps the segmentation model warm in-process; subprocess runs VIDEO_ANALYZER_CMD; "
+            "none sends manual review."
         ),
     )
     parser.add_argument(
@@ -640,17 +642,33 @@ def _payload_to_analyzer_result(payload: dict[str, Any]) -> tuple[str, dict[str,
 class AnalyzerRunner:
     def __init__(self, config: Config):
         self.config = config
+        self._cv_match = None
         self._fast_cpu = None
         self._sam3 = None
 
     def run(self, row: dict[str, Any], video_path: str) -> tuple[str, dict[str, Any], str | None]:
         if self.config.analyzer_engine == ANALYZER_NONE:
             return "manual", {"reason": "analyzer_disabled"}, None
+        if self.config.analyzer_engine == ANALYZER_CV_MATCH:
+            return self._run_cv_match(row, video_path)
         if self.config.analyzer_engine == ANALYZER_FAST_CPU:
             return self._run_fast_cpu(row, video_path)
         if self.config.analyzer_engine == ANALYZER_SAM3:
             return self._run_sam3(row, video_path)
         return run_subprocess_analyzer(self.config, row, video_path)
+
+    def _run_cv_match(self, row: dict[str, Any], video_path: str) -> tuple[str, dict[str, Any], str | None]:
+        if self._cv_match is None:
+            from cv_match_analyzer import CvMatchVideoAnalyzer, settings_from_env
+
+            self._cv_match = CvMatchVideoAnalyzer(settings_from_env())
+
+        try:
+            payload = self._cv_match.analyze(video_path, str(row["id"]))
+        except Exception as exc:  # pylint: disable=broad-except
+            return "manual", {"reason": "cv_match_analyzer_error"}, str(exc)
+
+        return _payload_to_analyzer_result(payload)
 
     def _run_fast_cpu(self, row: dict[str, Any], video_path: str) -> tuple[str, dict[str, Any], str | None]:
         if self._fast_cpu is None:

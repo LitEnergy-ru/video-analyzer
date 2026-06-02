@@ -1,19 +1,28 @@
 ARG PYTORCH_IMAGE=pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime
 FROM ${PYTORCH_IMAGE}
 ARG APT_MIRROR=
+ARG APT_SECURITY_MIRROR=
 ARG TORCH_INSTALL_INDEX_URL=
+ARG TORCH_INSTALL_EXTRA_INDEX_URL=
 ARG TORCH_INSTALL_PACKAGE=
+ARG TRANSFORMERS_INSTALL_PACKAGE=transformers>=4.57
+ARG PREFETCH_FAST_MODEL=false
+ARG VIDEO_FAST_MODEL_ID=openai/clip-vit-base-patch32
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     HF_HOME=/models/huggingface \
-    TRANSFORMERS_CACHE=/models/huggingface
+    TRANSFORMERS_CACHE=/models/huggingface \
+    HF_CACHE_TEMPLATE_DIR=/opt/hf-cache-template
 
 WORKDIR /app
 
-RUN if [ -n "$APT_MIRROR" ]; then \
-      sed -i "s|http://deb.debian.org/debian|$APT_MIRROR|g; s|http://deb.debian.org/debian-security|$APT_MIRROR-security|g" /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+RUN if [ -n "$APT_SECURITY_MIRROR" ]; then \
+      sed -i "s|http://deb.debian.org/debian-security|$APT_SECURITY_MIRROR|g" /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+    fi && \
+    if [ -n "$APT_MIRROR" ]; then \
+      sed -i "s|http://deb.debian.org/debian|$APT_MIRROR|g" /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
     fi && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -21,33 +30,54 @@ RUN if [ -n "$APT_MIRROR" ]; then \
       ffmpeg \
       libglib2.0-0 \
       libgl1 \
-      curl && \
+      libgomp1 \
+      curl \
+      findutils && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements-worker.txt /app/requirements-worker.txt
 RUN python -m pip install --upgrade pip && \
+    python -m pip install -r /app/requirements-worker.txt && \
     if [ -n "$TORCH_INSTALL_PACKAGE" ]; then \
       if [ -n "$TORCH_INSTALL_INDEX_URL" ]; then \
-        pip install --index-url "$TORCH_INSTALL_INDEX_URL" "$TORCH_INSTALL_PACKAGE"; \
+        if [ -n "$TORCH_INSTALL_EXTRA_INDEX_URL" ]; then \
+          python -m pip install --index-url "$TORCH_INSTALL_INDEX_URL" --extra-index-url "$TORCH_INSTALL_EXTRA_INDEX_URL" "$TORCH_INSTALL_PACKAGE"; \
+        else \
+          python -m pip install --index-url "$TORCH_INSTALL_INDEX_URL" "$TORCH_INSTALL_PACKAGE"; \
+        fi; \
       else \
-        pip install "$TORCH_INSTALL_PACKAGE"; \
+        python -m pip install "$TORCH_INSTALL_PACKAGE"; \
       fi; \
-      grep -Ev '^[[:space:]]*torch([<>=!~[:space:]]|$)' /app/requirements-worker.txt > /tmp/requirements-worker.no-torch.txt; \
-      pip install -r /tmp/requirements-worker.no-torch.txt; \
-    else \
-      pip install -r /app/requirements-worker.txt; \
+      if [ -n "$TRANSFORMERS_INSTALL_PACKAGE" ]; then \
+        python -m pip install "$TRANSFORMERS_INSTALL_PACKAGE"; \
+      fi; \
+      python -c "import torch; print('[deps] torch=' + torch.__version__ + ' cuda=' + str(torch.cuda.is_available()))"; \
     fi
+
+COPY scripts/prefetch_worker_models.py /app/scripts/prefetch_worker_models.py
+RUN if [ "$PREFETCH_FAST_MODEL" = "true" ] && [ -z "$TORCH_INSTALL_PACKAGE" ]; then \
+      echo "PREFETCH_FAST_MODEL=true requires TORCH_INSTALL_PACKAGE" >&2; \
+      exit 1; \
+    fi && \
+    python /app/scripts/prefetch_worker_models.py \
+      --cache-dir "$HF_CACHE_TEMPLATE_DIR" \
+      --fast-model-id "$VIDEO_FAST_MODEL_ID" \
+      --prefetch-fast-model "$PREFETCH_FAST_MODEL"
 
 COPY worker.py /app/worker.py
 COPY fast_cpu_analyzer.py /app/fast_cpu_analyzer.py
+COPY cv_match_analyzer.py /app/cv_match_analyzer.py
 COPY sam3_analyzer.py /app/sam3_analyzer.py
 COPY analyze_video_sam3.py /app/analyze_video_sam3.py
 COPY refs /app/refs
+COPY scripts/docker-entrypoint.worker.sh /usr/local/bin/docker-entrypoint.worker.sh
 
 RUN useradd -m -u 10001 appuser && \
     mkdir -p /tmp/video-jobs /models/huggingface && \
-    chown -R appuser:appuser /app /tmp/video-jobs /models
+    chmod +x /usr/local/bin/docker-entrypoint.worker.sh && \
+    chown -R appuser:appuser /app /tmp/video-jobs /models "$HF_CACHE_TEMPLATE_DIR"
 
 USER appuser
 
+ENTRYPOINT ["docker-entrypoint.worker.sh"]
 CMD ["python", "worker.py"]

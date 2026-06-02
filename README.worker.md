@@ -28,7 +28,7 @@ BACKEND_API_BASE_URL=http://host.docker.internal:8080/api/v1
 BACKEND_SERVICE_TOKEN=service-token-with-core-tasks-moderate-scope
 VIDEO_BATCH_SIZE=15
 VIDEO_DOWNLOADER=auto
-VIDEO_ANALYZER_ENGINE=fast_cpu
+VIDEO_ANALYZER_ENGINE=cv_match
 ```
 
 The backend service token must have `core:tasks:moderate` scope. The worker sends `X-User-Id` from `user_tasks.user_id` when calling:
@@ -37,7 +37,9 @@ The backend service token must have `core:tasks:moderate` scope. The worker send
 PATCH /api/v1/me/tasks/{task_id}
 ```
 
-By default `VIDEO_ANALYZER_ENGINE=fast_cpu` loads a lightweight CLIP model once, samples a few frames from each video, compares them with local Lit Energy reference images and returns `approved`, `manual`, or `rejected`. This is the cheap CPU-friendly path for basic moderation.
+By default `VIDEO_ANALYZER_ENGINE=cv_match` samples a few frames from each video and compares them with local Lit Energy reference images using OpenCV ORB features and HSV histograms. This mode has no PyTorch, Transformers, Hugging Face, or CUDA dependency, so it is the safest path for a small CPU VPS.
+
+Set `VIDEO_ANALYZER_ENGINE=fast_cpu` when you need the CLIP-based neural path. It loads a lightweight CLIP model once, samples a few frames from each video, compares them with local Lit Energy reference images and text prompts, and returns `approved`, `manual`, or `rejected`.
 
 Set `VIDEO_ANALYZER_ENGINE=sam3` when you need the heavier segmentation-based path. It keeps `facebook/sam3` loaded inside the worker process and reuses it across videos.
 
@@ -58,7 +60,30 @@ VIDEO_SAM3_MODEL_ID=facebook/sam3
 VIDEO_SAM3_PROMPTS=lit energy can|lit energy drink can|energy drink can
 ```
 
-## Fast CPU analyzer settings
+## OpenCV analyzer settings
+
+The OpenCV analyzer is intentionally coarse. It is designed to approve obvious Lit Energy videos and send weak matches to manual review without installing neural dependencies.
+
+Recommended CPU defaults:
+
+```env
+VIDEO_ANALYZER_ENGINE=cv_match
+VIDEO_CV_REFS_DIRS=refs/can|refs/chips|refs/logo
+VIDEO_CV_SAMPLE_FPS=0.35
+VIDEO_CV_MAX_SAMPLED_FRAMES=12
+VIDEO_CV_MAX_WIDTH=720
+VIDEO_CV_CROP_MODE=5
+VIDEO_CV_ORB_FEATURES=900
+VIDEO_CV_ORB_DISTANCE_THRESHOLD=58
+VIDEO_CV_APPROVE_MIN_GOOD_MATCHES=18
+VIDEO_CV_MANUAL_MIN_GOOD_MATCHES=8
+VIDEO_CV_APPROVE_SCORE_THRESHOLD=0.55
+VIDEO_CV_MANUAL_SCORE_THRESHOLD=0.35
+```
+
+Lower thresholds approve more videos but increase false positives. Higher thresholds send more videos to manual review.
+
+## Fast CPU CLIP analyzer settings
 
 The fast analyzer is intentionally coarse. It is designed to approve obvious Lit Energy videos, reject clear misses, and send weak matches to manual review.
 
@@ -175,13 +200,53 @@ CPU VPS without NVIDIA runtime:
 docker compose -f docker-compose.worker.yml -f docker-compose.worker.cpu.yml up -d --build
 ```
 
-The CPU override uses `python:3.12-slim` and installs `torch==2.4.1+cpu` from the official PyTorch CPU wheel index. Do not use `pytorch/pytorch:*cpu` tags; the official PyTorch Docker repository does not publish the `2.4.1-cpu` tag.
-
-If the VPS cannot build images because Docker Hub, Debian mirrors, or PyTorch wheels are unavailable, build and push the image from a machine with normal network access, then run the registry-only compose file:
+The CPU override uses `python:3.12-slim`. With the default `VIDEO_ANALYZER_ENGINE=cv_match`, it does not need PyTorch and can be built without neural dependencies:
 
 ```powershell
-VIDEO_WORKER_IMAGE=registry.example.com/litenergy/video-worker:20260601-1 docker compose -f docker-compose.worker.registry.yml up -d
+docker build `
+  --build-arg PYTORCH_IMAGE=python:3.12-slim `
+  -t registry.example.com/litenergy/video-worker:20260602-1 `
+  -f Dockerfile.worker .
 ```
+
+For the CLIP-based `fast_cpu` mode, install `torch==2.6.0+cpu` from the official PyTorch CPU wheel index and prefetch the model during image build. Do not use `pytorch/pytorch:*cpu` tags; the official PyTorch Docker repository does not publish CPU Docker tags for these versions.
+
+If the VPS cannot build images because Docker Hub, Debian mirrors, PyTorch wheels, or Hugging Face are unavailable, build and push the image from a machine with normal network access, then run the registry-only compose file:
+
+```powershell
+docker build `
+  --build-arg PYTORCH_IMAGE=python:3.12-slim `
+  --build-arg TORCH_INSTALL_INDEX_URL=https://download.pytorch.org/whl/cpu `
+  --build-arg TORCH_INSTALL_EXTRA_INDEX_URL=https://pypi.org/simple `
+  --build-arg TORCH_INSTALL_PACKAGE=torch==2.6.0+cpu `
+  --build-arg PREFETCH_FAST_MODEL=true `
+  --build-arg VIDEO_FAST_MODEL_ID=openai/clip-vit-base-patch32 `
+  -t registry.example.com/litenergy/video-worker:20260602-1 `
+  -f Dockerfile.worker .
+
+docker push registry.example.com/litenergy/video-worker:20260602-1
+```
+
+Then on the VPS:
+
+```bash
+cat > .env.worker.local <<'EOF'
+VIDEO_DB_DSN=postgres://user:password@postgres-host:5432/litenergy?sslmode=require
+BACKEND_API_BASE_URL=https://miniapp.24litclub.ru/api/v1
+BACKEND_SERVICE_TOKEN=service-token-with-core-tasks-moderate-scope
+VIDEO_ANALYZER_ENGINE=cv_match
+VIDEO_BATCH_SIZE=2
+VIDEO_POLL_SEC=3
+VIDEO_DOWNLOADER=auto
+EOF
+
+VIDEO_WORKER_IMAGE=registry.example.com/litenergy/video-worker:20260602-1 \
+  docker compose -f docker-compose.worker.registry.yml up -d
+```
+
+When using `VIDEO_ANALYZER_ENGINE=fast_cpu`, add `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` to `.env.worker.local` after building with `PREFETCH_FAST_MODEL=true`. The image build prefetches `openai/clip-vit-base-patch32` into `/opt/hf-cache-template`; on first container start, the entrypoint seeds `/models/huggingface` from that template.
+
+If you want the worker to download models at runtime instead, build with `--build-arg PREFETCH_FAST_MODEL=false` and remove `HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE` from `.env.worker.local`.
 
 Stop:
 

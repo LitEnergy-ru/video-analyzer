@@ -5,5 +5,3 @@ PySocks>=1.7
 numpy>=1.26
 opencv-python-headless>=4.10
 Pillow>=10.4
-torch>=2.4
-transformers>=4.57

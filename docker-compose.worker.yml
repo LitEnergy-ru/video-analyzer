@@ -6,8 +6,13 @@ services:
       args:
         PYTORCH_IMAGE: ${PYTORCH_IMAGE:-pytorch/pytorch:2.4.1-cuda12.1-cudnn9-runtime}
         APT_MIRROR: ${APT_MIRROR:-}
+        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-}
         TORCH_INSTALL_INDEX_URL: ${TORCH_INSTALL_INDEX_URL:-}
+        TORCH_INSTALL_EXTRA_INDEX_URL: ${TORCH_INSTALL_EXTRA_INDEX_URL:-}
         TORCH_INSTALL_PACKAGE: ${TORCH_INSTALL_PACKAGE:-}
+        TRANSFORMERS_INSTALL_PACKAGE: ${TRANSFORMERS_INSTALL_PACKAGE:-transformers>=4.57}
+        PREFETCH_FAST_MODEL: ${PREFETCH_FAST_MODEL:-false}
+        VIDEO_FAST_MODEL_ID: ${VIDEO_FAST_MODEL_ID:-openai/clip-vit-base-patch32}
     container_name: video-worker
     restart: unless-stopped
     runtime: nvidia
